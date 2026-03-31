@@ -36,17 +36,26 @@ function walk(dir, ext = '.ts') {
 function patchFile(filePath) {
   let src = fs.readFileSync(filePath, 'utf8')
   let changed = false
+  const stubPath = path.relative(
+    path.dirname(filePath),
+    path.join(ROOT, 'stubs', 'bun-bundle.js'),
+  )
+    .replace(/\\/g, '/')
+    .replace(/^(?!\.)/, './')
 
   // 1. Replace `import { feature } from 'bun:bundle'` / `"bun:bundle"`
   if (src.includes("from 'bun:bundle'") || src.includes('from "bun:bundle"')) {
     src = src.replace(/import\s*\{\s*feature\s*\}\s*from\s*['"]bun:bundle['"]/g,
-      "import { feature } from '../stubs/bun-bundle.js'")
-    // Fix relative depth based on file location
-    const rel = path.relative(SRC, path.dirname(filePath))
-    const depth = rel ? '../'.repeat(rel.split('/').length) : ''
-    if (depth) {
-      src = src.replace("from '../stubs/bun-bundle.js'", `from '${depth}stubs/bun-bundle.js'`)
-    }
+      `import { feature } from '${stubPath}'`)
+    changed = true
+  }
+
+  // 1b. Normalize any existing stub import depth to the correct relative path.
+  src = src.replace(
+    /import\s*\{\s*feature\s*\}\s*from\s*['"][^'"]*stubs\/bun-bundle\.js['"]/g,
+    `import { feature } from '${stubPath}'`,
+  )
+  if (src.includes(`import { feature } from '${stubPath}'`)) {
     changed = true
   }
 
@@ -95,6 +104,16 @@ const ffiStub = path.join(ROOT, 'stubs', 'bun-ffi.ts')
 if (!fs.existsSync(ffiStub)) {
   fs.writeFileSync(ffiStub, `// Stub for bun:ffi — not available outside Bun runtime\nexport const ffi = {} as any\nexport function dlopen() { return {} }\n`)
   console.log('  created: stubs/bun-ffi.ts')
+}
+
+// Create runtime JS stub for bun:bundle feature() imports
+const bunBundleJsStub = path.join(ROOT, 'stubs', 'bun-bundle.js')
+if (!fs.existsSync(bunBundleJsStub)) {
+  fs.writeFileSync(
+    bunBundleJsStub,
+    `// Stub for bun:bundle at runtime\nexport function feature(_flag) { return false }\n`,
+  )
+  console.log('  created: stubs/bun-bundle.js')
 }
 
 // Create global MACRO type declaration
